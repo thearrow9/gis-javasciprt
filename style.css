@@ -4,3 +4,22 @@ html, body, #mapDiv
     margin: 0;
     height: 100%;
 }
+
+#right-panel
+{
+    position: fixed;
+    top: 120px;
+    right: 0;
+    height: calc(100% - 120px);
+    width: 160px;
+    background: rgb(200, 200, 200);
+    z-index: 50;
+}
+
+#container
+{
+    padding: 8px;
+    font-size: 90%;
+    height: 200px;
+    overflow-y: auto;
+}
