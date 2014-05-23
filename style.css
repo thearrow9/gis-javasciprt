@@ -1,4 +1,4 @@
-html, body, #mapDiv
+html, body, #map
 {
     padding: 0;
     margin: 0;
@@ -20,6 +20,12 @@ html, body, #mapDiv
 {
     padding: 8px;
     font-size: 90%;
+}
+
+#legend
+{
     height: 200px;
     overflow-y: auto;
 }
+
+
