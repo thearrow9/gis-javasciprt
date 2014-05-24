@@ -28,4 +28,12 @@ html, body, #map
     overflow-y: auto;
 }
 
+.dijitPaletteImg img
+{
+    width: 20px;
+    height: 20px;
+    display: block;
+    opacity: 0.4;
+    cursor: pointer;
+}
 

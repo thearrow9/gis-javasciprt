@@ -1,19 +1,19 @@
 var dojoConfig = { parseOnLoad: true };
 
-var map, dynamic_layer, draw_toolbar, edit_toolbar, draw_tool;
+var map, dynamic_layer, draw_toolbar, edit_toolbar, draw_tool, current_color;
 
 require([
     'esri/map',
 
     "esri/toolbars/draw", "esri/toolbars/edit", "esri/graphic", "esri/symbols/SimpleMarkerSymbol",
-    "esri/symbols/SimpleFillSymbol", "esri/symbols/SimpleLineSymbol", "esri/Color",
+    "esri/symbols/SimpleFillSymbol", "esri/symbols/SimpleLineSymbol", "esri/Color", "dijit/ColorPalette",
 
     'esri/dijit/Scalebar', 'esri/dijit/Legend', 'esri/dijit/OverviewMap',
 
     "esri/layers/ArcGISDynamicMapServiceLayer", //"esri/layers/FeatureLayer",
 
     'dojo/_base/array', 'dojo/on', 'dojo/query', 'dojo/dom', 'dojo/_base/event', 'dojo/domReady!'
-],  function(Map, Draw, Edit, Graphic, SimpleMarkerSymbol, SimpleFillSymbol, SimpleLineSymbol, Color,
+],  function(Map, Draw, Edit, Graphic, SimpleMarkerSymbol, SimpleFillSymbol, SimpleLineSymbol, Color, ColorPalette,
              Scalebar, Legend, OverviewMap, ArcGISDynamicMapServiceLayer,
              /*FeatureLayer, */arrayUtils, on, query, dom, event) {
         map = new Map('map', {
@@ -39,7 +39,7 @@ require([
             opacity: .3
         });
 
-        map.on("load", createDrawTools);
+        map.on("load", init);
         map.on("layers-add-result", updateLegend);
         map.on("click", function(evt) { edit_toolbar.deactivate(); });
 
@@ -104,20 +104,38 @@ require([
             draw_toolbar.activate(Draw[draw_tool]);
         }
 
-        function createDrawTools(){
+        function init() {
+            createDrawTools();
+            createEditTools();
+            createColorPicker();
+            current_color = '#ffffff';
+        }
+
+
+        function createDrawTools() {
             draw_toolbar = new Draw(map, { showTooltips: false });
             draw_toolbar.on('draw-end', addGraphicToMap)
             var tools = query('.tool');
             arrayUtils.forEach(tools, function(tool) {
                 on(tool, 'click', activateDrawTool);
             });
+        }
+
+        function createEditTools() {
             edit_toolbar = new Edit(map);
         }
+
+        function createColorPicker() {
+            var myPalette = new ColorPalette({
+                palette: "3x4",
+                onChange: function(val){ current_color = val; }
+            }, "color-picker");
+        }
+
 
         function addGraphicToMap(evt) {
             var symbol;
             resetCursor();
-            draw_toolbar.deactivate();
             switch (evt.geometry.type) {
             case "point":
             case "multipoint":
@@ -128,9 +146,9 @@ require([
                 break;
             default:
                 symbol = new SimpleFillSymbol();
-                //symbol.setColor(Color([255,255,0,0.5]));
                 break;
             }
+            symbol.setColor(Color.fromHex(current_color));
             var graphic = new Graphic(evt.geometry, symbol);
             map.graphics.add(graphic);
             updateEditableGraphics();
@@ -147,7 +165,6 @@ require([
             }
             activateToolbar(evt.graphic);
           });
-
         }
 
         function resetCursor() {
