@@ -1,6 +1,7 @@
 var dojoConfig = { parseOnLoad: true };
 
-var map, dynamic_layer, draw_toolbar, edit_toolbar, draw_tool, current_color;
+var map, draw_toolbar, edit_toolbar, draw_tool, current_color;
+
 
 require([
     'esri/map',
@@ -10,19 +11,28 @@ require([
 
     'esri/dijit/Scalebar', 'esri/dijit/Legend', 'esri/dijit/OverviewMap',
 
-    "esri/layers/ArcGISDynamicMapServiceLayer", //"esri/layers/FeatureLayer",
+    "esri/layers/ArcGISDynamicMapServiceLayer", "esri/layers/FeatureLayer",
 
     'dojo/_base/array', 'dojo/on', 'dojo/query', 'dojo/dom', 'dojo/_base/event', 'dojo/domReady!'
 ],  function(Map, Draw, Edit, Graphic, SimpleMarkerSymbol, SimpleFillSymbol, SimpleLineSymbol, Color, ColorPalette,
              Scalebar, Legend, OverviewMap, ArcGISDynamicMapServiceLayer,
-             /*FeatureLayer, */arrayUtils, on, query, dom, event) {
+             FeatureLayer, arrayUtils, on, query, dom, event) {
         map = new Map('map', {
             center: [-93.5, 36.972],
             zoom: 4,
             basemap: 'streets'
         });
 
-        dynamic_layer = new ArcGISDynamicMapServiceLayer("http://sampleserver6.arcgisonline.com/arcgis/rest/services/USA/MapServer");
+        var dynamic_layer = new ArcGISDynamicMapServiceLayer("http://sampleserver6.arcgisonline.com/arcgis/rest/services/USA/MapServer");
+
+        var landuseLineLayer = new FeatureLayer("http://sampleserver6.arcgisonline.com/arcgis/rest/services/Military/FeatureServer/8", {
+          mode: FeatureLayer.MODE_SNAPSHOT,
+          outFields: ["*"]
+        });
+        var landusePolygonLayer = new FeatureLayer("http://sampleserver6.arcgisonline.com/arcgis/rest/services/Military/FeatureServer/9", {
+          mode: FeatureLayer.MODE_SNAPSHOT,
+          outFields: ["*"]
+        });
 
         var scalebar = new Scalebar({
             map: map,
@@ -43,7 +53,7 @@ require([
         map.on("layers-add-result", updateLegend);
         map.on("click", function(evt) { edit_toolbar.deactivate(); });
 
-        map.addLayers([dynamic_layer]);
+        map.addLayers([dynamic_layer, landuseLineLayer, landusePolygonLayer]);
         dynamic_layer.on('load', buildLayerList);
 
         function updateLegend(evt) {
@@ -136,6 +146,7 @@ require([
         function addGraphicToMap(evt) {
             var symbol;
             resetCursor();
+            draw_toolbar.deactivate();
             switch (evt.geometry.type) {
             case "point":
             case "multipoint":
@@ -155,15 +166,15 @@ require([
         }
 
         function updateEditableGraphics() {
-          map.graphics.on("click", function(evt) {
-            event.stop(evt);
-            if(draw_tool == 'DELETE') {
-                evt.graphic.hide();
-                draw_toolbar.deactivate();
-                resetCursor();
-                return;
-            }
-            activateToolbar(evt.graphic);
+            map.graphics.on("click", function(evt) {
+                event.stop(evt);
+                if (draw_tool == 'DELETE') {
+                    map.graphics.remove(evt.graphic);
+                    draw_toolbar.deactivate();
+                    resetCursor();
+                    return;
+                }
+                activateEditToolbar(evt.graphic);
           });
         }
 
@@ -171,7 +182,7 @@ require([
             query('*').style('cursor', '');
         }
 
-        function activateToolbar(graphic) {
+        function activateEditToolbar(graphic) {
             tool = Edit.MOVE | Edit.Scale | Edit.EDIT_VERTICES | Edit.Scale | Edit.ROTATE;
             var options = {
                 allowAddVertices: true,
