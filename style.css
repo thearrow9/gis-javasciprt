@@ -22,10 +22,35 @@ html, body, #map
     font-size: 90%;
 }
 
-#legend
+.panel
 {
-    height: 100px;
-    overflow-y: auto;
+    position: absolute;
+    font-size: 80%;
+}
+
+.panel > div
+{
+    background: rgba(255, 255, 255, 0.9);
+    margin: 15px 0;
+    padding: 2px 8px;
+}
+
+.panel h2
+{
+    padding: 0;
+    margin: 8px 0;
+}
+
+#shapes
+{
+    right: 0;
+    top: 130px;
+}
+
+#display
+{
+    top: 90px;
+    left: 20px;
 }
 
 .dijitPaletteImg img
@@ -33,7 +58,9 @@ html, body, #map
     width: 20px;
     height: 20px;
     display: block;
-    opacity: 0.4;
+    opacity: 0.8;
     cursor: pointer;
+    border: 1px solid gray;
+    margin: 1px;
 }
 

@@ -14,16 +14,39 @@
 
 <body class="claro">
     <div id="map"></div>
-    <div id="right-panel">
-        <div id="container">
-            <div id="legend"></div>
-            <div id="layer-list"> </div>
+
+    <div id="display" class="panel">
+        <div id="layers">
+            <h3>Видими слоеве</h3>
+            <div id="layer-list"></div>
+        </div>
+        <div id="legend">
+            <h3>Легенда</h3>
+            <div id="legend-panel"></div>
+        </div>
+    </div>
+
+    <div id="shapes" class="panel">
+        <div id="tools">
+            <h3>Инструменти</h3>
             <div id="drawing-tools">
-                <button class="tool" value="POINT">Точка</button>
-                <button class="tool" value="FREEHAND_POLYGON">Полигон</button>
-                <button class="tool" value="DELETE">Гума</button>
+                <div class="rows">
+                    <button class="tool" value="POINT">Точка</button>
+                    <button class="tool" value="FREEHAND_POLYLINE">Линия</button>
+                </div>
+                <div class="rows">
+                    <button class="tool" value="TRIANGLE">Триъгълник</button>
+                    <button class="tool" value="ELLIPSE">Елипса</button>
+                </div>
+                <div class="rows">
+                    <button class="tool" value="FREEHAND_POLYGON">Полигон</button>
+                    <button class="tool" value="DELETE">Гума</button>
+                </div>
             </div>
-            <div id="color-picker"></div>
+        </div>
+        <div id="colors">
+            <h3>Избор на цвят</h3>
+            <div id="color-panel"></div>
         </div>
     </div>
 </body>
