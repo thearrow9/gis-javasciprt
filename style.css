@@ -64,3 +64,10 @@ html, body, #map
     border: 0;
     background: transparent;
 }
+
+.saveButton
+{
+    margin: 0;
+    width: 16px;
+    height: 16px;
+}

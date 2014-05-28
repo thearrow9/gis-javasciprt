@@ -1,25 +1,30 @@
 var dynamicLayerUrl = 'http://sampleserver6.arcgisonline.com/arcgis/rest/services/USA/MapServer';
 var featureServerUrl = 'http://sampleserver6.arcgisonline.com/arcgis/rest/services/Military/FeatureServer/';
 
+var map;
+
 require([
     'esri/map',
     "esri/dijit/BasemapToggle",
 
     "esri/toolbars/draw", "esri/toolbars/edit", "esri/graphic", "esri/symbols/SimpleMarkerSymbol",
-    "esri/symbols/SimpleFillSymbol", "esri/symbols/SimpleLineSymbol", "esri/Color",
+    "esri/symbols/SimpleFillSymbol", "esri/symbols/SimpleLineSymbol", "esri/tasks/query",
 
     "esri/dijit/editing/TemplatePicker",
 
     'esri/dijit/Scalebar', 'esri/dijit/Legend', 'esri/dijit/OverviewMap',
 
-    "esri/layers/ArcGISDynamicMapServiceLayer", "esri/layers/FeatureLayer",
+    "esri/layers/ArcGISDynamicMapServiceLayer", "esri/layers/FeatureLayer", "esri/dijit/AttributeInspector",
 
     "dojo/parser",
-    "dojo/_base/lang",
+    "dojo/_base/lang", "dojo/dom-construct",
+    'dijit/form/Button',
     'dojo/_base/array', 'dojo/on', 'dojo/query', 'dojo/dom', 'dojo/_base/event', 'dojo/domReady!'
-],  function(Map, BasemapToggle, Draw, Edit, Graphic, SimpleMarkerSymbol, SimpleFillSymbol, SimpleLineSymbol, Color, TemplatePicker,
-             Scalebar, Legend, OverviewMap, ArcGISDynamicMapServiceLayer,
-             FeatureLayer, parser, lang, arrayUtils, on, query, dom, event) {
+],  function(Map, BasemapToggle, Draw, Edit, Graphic, SimpleMarkerSymbol, SimpleFillSymbol, SimpleLineSymbol, Query, TemplatePicker,
+             Scalebar, Legend, OverviewMap, ArcGISDynamicMapServiceLayer, FeatureLayer, AttributeInspector,
+             parser, lang, domConstruct, Button, arrayUtils, on, query, dom, event) {
+
+        esriConfig.defaults.io.proxyUrl = "/proxy";
 
         map = new Map('map', {
             center: [-93.5, 36.972],
@@ -28,20 +33,23 @@ require([
         });
         parser.parse();
 
-        var map, overviewMapDijit;
+        var overviewMapDijit;
 
         var drawToolbar, editToolbar, selectedTemplate;
 
         var legendDijit, layers, currentLayer;
 
+        var selectQuery, updateFeature, attrInspector;
 
         var dynamicLayer = new ArcGISDynamicMapServiceLayer(dynamicLayerUrl);
-        var landusePointLayer = buildFeatureLayer(featureServerUrl + '6')
-        var landusePolylineLayer = buildFeatureLayer(featureServerUrl + '8')
+        dynamicLayer.setDisableClientCaching(true);
+
+        var landusePointLayer = loadFeatureLayer(featureServerUrl + '6')
+        var landusePolylineLayer = loadFeatureLayer(featureServerUrl + '8')
+        var landusePolygonLayer = loadFeatureLayer(featureServerUrl + '9')
 
 
-
-        function buildFeatureLayer(url) {
+        function loadFeatureLayer(url) {
             return new FeatureLayer(url, {
                 mode: FeatureLayer.MODE_SNAPSHOT,
                 outFields: ["*"]
@@ -109,12 +117,20 @@ require([
         map.on("load", mapInit);
         map.on('update-end', mapUpdateEnd);
         map.on("layers-add-result", mapLayersAdd);
-        map.on("click", function(evt) { editToolbar.deactivate(); });
+        map.on("click", mapClick);
 
         dynamicLayer.on('load', createLayerList);
 
+        landusePolygonLayer.on("edits-complete", function() { dynamicLayer.refresh(); });
+
+        function mapClick() {
+            map.infoWindow.hide();
+            editToolbar.deactivate();
+            resetCursor();
+        };
+
         function mapInit(evt) {
-            map.addLayers([dynamicLayer, landusePointLayer, landusePolylineLayer]);
+            map.addLayers([dynamicLayer, landusePointLayer, landusePolylineLayer, landusePolygonLayer]);
             createScalebar();
             createBasemapToggle();
             createOverviewMap();
@@ -130,9 +146,13 @@ require([
             });
 
             createLegend(evt);
+            createAttrInspector();
             createTemplatePicker();
+
             createDrawToolbar();
             createEditToolbar();
+
+            selectQuery = new Query();
 
             arrayUtils.forEach(layers, function(layer) {
                 var editingEnabled = false;
@@ -148,21 +168,37 @@ require([
                     }
                 });
                 layer.on("click", function(evt) {
+                    currentLayer = this;
                     event.stop(evt);
-                    if (evt.ctrlKey === true || evt.metaKey === true) {
-                        var conf = confirm('Сигурни ли сте, че искате да изтриете този обект?');
-                        if (conf) {
-                            layer.applyEdits(null,null,[evt.graphic]);
-                            currentLayer = this;
-                        }
-                        editToolbar.deactivate();
-                        editingEnabled = false;
+                    if (evt.ctrlKey === true) {
+                        deleteGraphic(evt.graphic);
+                    }
+                    else if (evt.shiftKey === true) {
+                        showInfoWindow(evt.mapPoint, evt.screenPoint);
                     }
                 });
             });
         }
 
+        function deleteGraphic(graphic) {
+            var conf = confirm('Сигурни ли сте, че искате да изтриете този обект?');
+            if (conf) {
+                currentLayer.applyEdits(null, null, [graphic]);
+            }
+            editToolbar.deactivate();
+            editingEnabled = false;
+        }
 
+        function showInfoWindow(mapPoint, screenPoint) {
+            selectQuery.geometry = mapPoint;
+            currentLayer.selectFeatures(selectQuery, FeatureLayer.SELECTION_NEW, function(features) {
+                if (features.length > 0) {
+                    updateFeature = features[0];
+                    map.infoWindow.setTitle(features[0].getLayer().name);
+                    map.infoWindow.show(screenPoint, map.getInfoWindowAnchor(screenPoint));
+                }
+            });
+        }
 
         function createLegend(evt) {
             var layerInfo = arrayUtils.map(evt.layers, function (layer, index) {
@@ -202,6 +238,33 @@ require([
             on(layer_list, "click", updateLayerVisibility);
         }
 
+        function createAttrInspector() {
+            var layerInfos = [{
+                'featureLayer': landusePolygonLayer,
+                'showAttachments': false,
+                'isEditable': true,
+                'showDeleteButton': false
+            }];
+
+            attrInspector = new AttributeInspector({
+                layerInfos: layerInfos
+            }, domConstruct.create("div"));
+
+            var saveButton = new Button({ label: "Save", "class": "saveButton"});
+
+            domConstruct.place(saveButton.domNode, attrInspector.deleteBtn.domNode, "before");
+            saveButton.on("click", function(){
+                updateFeature.getLayer().applyEdits(null, [updateFeature], null);
+                map.infoWindow.hide();
+            });
+
+            attrInspector.on("attribute-change", function(evt) {
+                updateFeature.attributes[evt.fieldName] = evt.fieldValue;
+            });
+
+            map.infoWindow.setContent(attrInspector.domNode);
+        }
+
         function updateLayerVisibility() {
             var inputs = query(".list_item");
             var input, visible = [];
@@ -238,7 +301,6 @@ require([
             var newGraphic = new Graphic(evt.geometry, null, newAttributes);
             selectedTemplate.featureLayer.applyEdits([newGraphic], null, null);
             map.graphics.add(newGraphic);
-            updateEditableGraphics();
         }
 
         function createEditToolbar() {
