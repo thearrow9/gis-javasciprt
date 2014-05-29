@@ -1,5 +1,6 @@
 var dynamicLayerUrl = 'http://sampleserver6.arcgisonline.com/arcgis/rest/services/USA/MapServer';
-var featureServerUrl = 'http://sampleserver6.arcgisonline.com/arcgis/rest/services/Military/FeatureServer/';
+var militaryLayerUrl = 'http://sampleserver6.arcgisonline.com/arcgis/rest/services/Military/FeatureServer/';
+var statesUSATaskUrl = 'http://sampleserver1.arcgisonline.com/ArcGIS/rest/services/Demographics/ESRI_Census_USA/MapServer/5';
 
 var map;
 
@@ -8,7 +9,7 @@ require([
     "esri/dijit/BasemapToggle",
 
     "esri/toolbars/draw", "esri/toolbars/edit", "esri/graphic", "esri/symbols/SimpleMarkerSymbol",
-    "esri/symbols/SimpleFillSymbol", "esri/symbols/SimpleLineSymbol", "esri/tasks/query",
+    "esri/symbols/SimpleFillSymbol", "esri/symbols/SimpleLineSymbol", "esri/tasks/query", 'esri/tasks/QueryTask',
 
     "esri/dijit/editing/TemplatePicker",
 
@@ -18,11 +19,11 @@ require([
 
     "dojo/parser",
     "dojo/_base/lang", "dojo/dom-construct",
-    'dijit/form/Button',
+    'dijit/form/Button', 'dijit/Dialog',
     'dojo/_base/array', 'dojo/on', 'dojo/query', 'dojo/dom', 'dojo/_base/event', 'dojo/domReady!'
-],  function(Map, BasemapToggle, Draw, Edit, Graphic, SimpleMarkerSymbol, SimpleFillSymbol, SimpleLineSymbol, Query, TemplatePicker,
+],  function(Map, BasemapToggle, Draw, Edit, Graphic, SimpleMarkerSymbol, SimpleFillSymbol, SimpleLineSymbol, Query, QueryTask, TemplatePicker,
              Scalebar, Legend, OverviewMap, ArcGISDynamicMapServiceLayer, FeatureLayer, AttributeInspector,
-             parser, lang, domConstruct, Button, arrayUtils, on, query, dom, event) {
+             parser, lang, domConstruct, Button, Dialog, arrayUtils, on, query, dom, event) {
 
         esriConfig.defaults.io.proxyUrl = "/proxy";
 
@@ -37,23 +38,72 @@ require([
 
         var drawToolbar, editToolbar, selectedTemplate;
 
-        var legendDijit, layers, currentLayer;
+        var legendDijit, layers, currentLayer, dialog;
 
-        var selectQuery, updateFeature, attrInspector;
+        var selectQuery, searchQuery, updateFeature, attrInspector, queryString;
 
-        var dynamicLayer = new ArcGISDynamicMapServiceLayer(dynamicLayerUrl);
-        dynamicLayer.setDisableClientCaching(true);
+        var mapUSALayer = new ArcGISDynamicMapServiceLayer(dynamicLayerUrl);
 
-        var landusePointLayer = loadFeatureLayer(featureServerUrl + '6')
-        var landusePolylineLayer = loadFeatureLayer(featureServerUrl + '8')
-        var landusePolygonLayer = loadFeatureLayer(featureServerUrl + '9')
+        var landusePointLayer = loadFeatureLayer(militaryLayerUrl + '6')
+        var landusePolylineLayer = loadFeatureLayer(militaryLayerUrl + '8')
+        var landusePolygonLayer = loadFeatureLayer(militaryLayerUrl + '9')
 
+        var statesUSATask = new QueryTask(statesUSATaskUrl);
+
+        map.on("load", mapInit);
+        map.on('update-end', mapUpdateEnd);
+        map.on("layers-add-result", mapLayersAdd);
+        map.on("click", mapClick);
+
+        mapUSALayer.on('load', createLayerList);
+
+        on(dom.byId("form-submit"), "click", searchObject);
+
+        function createSearchQuery() {
+            searchQuery = new Query();
+            searchQuery.returnGeometry = false;
+            searchQuery.outFields = [
+                'ObjectID', 'SUB_REGION', 'POP2007'
+            ];
+        }
+
+        function searchObject() {
+            queryString = capitalizeWord(dom.byId('state-name').value);
+            searchQuery.text = queryString;
+            statesUSATask.execute(searchQuery, showResults);
+        }
+
+        function showResults(results) {
+            var output = '';
+            var resultCount = results.features.length;
+            var i, featureAttributes, attr;
+
+            if (resultCount === 0) {
+                output = 'Няма открити съвпадения';
+            }
+            else {
+                for (i = 0; i < resultCount; i++) {
+                    featureAttributes = results.features[i].attributes;
+                    for (attr in featureAttributes) {
+                        output += "<b>" + attr + ":</b>  " + featureAttributes[attr] + "<br />";
+                    }
+                    output += "<br />";
+                }
+            }
+            dialog.set('title', 'Резултат от търсенето за "' + queryString + '"');
+            dialog.set("content", output);
+            dialog.show();
+        }
 
         function loadFeatureLayer(url) {
             return new FeatureLayer(url, {
                 mode: FeatureLayer.MODE_SNAPSHOT,
                 outFields: ["*"]
             });
+        }
+
+        function capitalizeWord(word) {
+            return word.charAt(0).toUpperCase() + word.toLowerCase().substr(1)
         }
 
         function createScalebar() {
@@ -114,15 +164,6 @@ require([
             }
         }
 
-        map.on("load", mapInit);
-        map.on('update-end', mapUpdateEnd);
-        map.on("layers-add-result", mapLayersAdd);
-        map.on("click", mapClick);
-
-        dynamicLayer.on('load', createLayerList);
-
-        landusePolygonLayer.on("edits-complete", function() { dynamicLayer.refresh(); });
-
         function mapClick() {
             map.infoWindow.hide();
             editToolbar.deactivate();
@@ -130,7 +171,7 @@ require([
         };
 
         function mapInit(evt) {
-            map.addLayers([dynamicLayer, landusePointLayer, landusePolylineLayer, landusePolygonLayer]);
+            map.addLayers([mapUSALayer, landusePointLayer, landusePolylineLayer, landusePolygonLayer]);
             createScalebar();
             createBasemapToggle();
             createOverviewMap();
@@ -145,6 +186,7 @@ require([
                 return result.layer;
             });
 
+            createDialog();
             createLegend(evt);
             createAttrInspector();
             createTemplatePicker();
@@ -152,6 +194,7 @@ require([
             createDrawToolbar();
             createEditToolbar();
 
+            createSearchQuery();
             selectQuery = new Query();
 
             arrayUtils.forEach(layers, function(layer) {
@@ -179,6 +222,13 @@ require([
                 });
             });
         }
+
+        function createDialog() {
+            dialog = new Dialog({
+                style: "width: 300px"
+            });
+        }
+
 
         function deleteGraphic(graphic) {
             var conf = confirm('Сигурни ли сте, че искате да изтриете този обект?');
@@ -218,7 +268,7 @@ require([
 
         function createLayerList() {
             var visible = [];
-            var items = arrayUtils.map(dynamicLayer.layerInfos, function(info, index) {
+            var items = arrayUtils.map(mapUSALayer.layerInfos, function(info, index) {
                 is_showed = false;
                 if (info.name == 'Counties') {
                     visible.push(info.id);
@@ -234,7 +284,7 @@ require([
             });
             var layer_list = dom.byId("layer-list");
             layer_list.innerHTML = items.join("\n");
-            dynamicLayer.setVisibleLayers(visible);
+            mapUSALayer.setVisibleLayers(visible);
             on(layer_list, "click", updateLayerVisibility);
         }
 
@@ -253,16 +303,18 @@ require([
             var saveButton = new Button({ label: "Save", "class": "saveButton"});
 
             domConstruct.place(saveButton.domNode, attrInspector.deleteBtn.domNode, "before");
-            saveButton.on("click", function(){
-                updateFeature.getLayer().applyEdits(null, [updateFeature], null);
-                map.infoWindow.hide();
-            });
+            map.infoWindow.setContent(attrInspector.domNode);
+
+            saveButton.on("click", saveFL);
 
             attrInspector.on("attribute-change", function(evt) {
                 updateFeature.attributes[evt.fieldName] = evt.fieldValue;
             });
+        }
 
-            map.infoWindow.setContent(attrInspector.domNode);
+        function saveFL() {
+            updateFeature.getLayer().applyEdits(null, [updateFeature], null);
+            map.infoWindow.hide();
         }
 
         function updateLayerVisibility() {
@@ -278,16 +330,7 @@ require([
             if (visible.length === 0) {
                 visible.push(-1);
             }
-            dynamicLayer.setVisibleLayers(visible);
-        }
-
-        function activateDrawTool() {
-            draw_tool = this.value;
-            if (draw_tool == 'DELETE') {
-                return;
-            }
-
-            draw_toolbar.activate(Draw[draw_tool]);
+            mapUSALayer.setVisibleLayers(visible);
         }
 
         function createDrawToolbar() {

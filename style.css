@@ -71,3 +71,25 @@ html, body, #map
     width: 16px;
     height: 16px;
 }
+
+#form
+{
+    position: absolute;
+    top: 0;
+    left: 160px;
+}
+
+input
+{
+    margin: 0;
+    padding: 2px;
+}
+
+#search-results
+{
+    top: 250px;
+    left: 300px;
+    background: white;
+    height: 200px;
+    overflow-y: auto;
+}
