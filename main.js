@@ -1,6 +1,7 @@
 var dynamicLayerUrl = 'http://sampleserver6.arcgisonline.com/arcgis/rest/services/USA/MapServer';
 var militaryLayerUrl = 'http://sampleserver6.arcgisonline.com/arcgis/rest/services/Military/FeatureServer/';
 var statesUSATaskUrl = 'http://sampleserver1.arcgisonline.com/ArcGIS/rest/services/Demographics/ESRI_Census_USA/MapServer/5';
+var earthquakesUrl = 'http://sampleserver3.arcgisonline.com/ArcGIS/rest/services/Earthquakes/EarthquakesFromLastSevenDays/FeatureServer/0';
 
 var map;
 
@@ -15,6 +16,8 @@ require([
 
     'esri/dijit/Scalebar', 'esri/dijit/Legend', 'esri/dijit/OverviewMap',
 
+    'esri/renderers/SimpleRenderer', 'esri/Color', 'esri/InfoTemplate',
+
     "esri/layers/ArcGISDynamicMapServiceLayer", "esri/layers/FeatureLayer", "esri/dijit/AttributeInspector",
 
     "dojo/parser",
@@ -22,7 +25,7 @@ require([
     'dijit/form/Button', 'dijit/Dialog',
     'dojo/_base/array', 'dojo/on', 'dojo/query', 'dojo/dom', 'dojo/_base/event', 'dojo/domReady!'
 ],  function(Map, BasemapToggle, Draw, Edit, Graphic, SimpleMarkerSymbol, SimpleFillSymbol, SimpleLineSymbol, Query, QueryTask, TemplatePicker,
-             Scalebar, Legend, OverviewMap, ArcGISDynamicMapServiceLayer, FeatureLayer, AttributeInspector,
+             Scalebar, Legend, OverviewMap, SimpleRenderer, Color, InfoTemplate, ArcGISDynamicMapServiceLayer, FeatureLayer, AttributeInspector,
              parser, lang, domConstruct, Button, Dialog, arrayUtils, on, query, dom, event) {
 
         esriConfig.defaults.io.proxyUrl = "/proxy";
@@ -36,7 +39,9 @@ require([
 
         var overviewMapDijit;
 
-        var drawToolbar, editToolbar, selectedTemplate;
+        var drawToolbar, editToolbar, selectedTemplate, selectToolbar;
+
+        var bufferArea;
 
         var legendDijit, layers, currentLayer, dialog;
 
@@ -44,9 +49,15 @@ require([
 
         var mapUSALayer = new ArcGISDynamicMapServiceLayer(dynamicLayerUrl);
 
-        var landusePointLayer = loadFeatureLayer(militaryLayerUrl + '6')
-        var landusePolylineLayer = loadFeatureLayer(militaryLayerUrl + '8')
-        var landusePolygonLayer = loadFeatureLayer(militaryLayerUrl + '9')
+        var landusePointLayer = loadFeatureLayer(militaryLayerUrl + '6');
+        var landusePolylineLayer = loadFeatureLayer(militaryLayerUrl + '8');
+        var landusePolygonLayer = loadFeatureLayer(militaryLayerUrl + '9');
+
+        var earthquakesFL = new FeatureLayer(earthquakesUrl, {
+            mode: FeatureLayer.MODE_SNAPSHOT,
+            outFields: ["datetime", 'depth', 'magnitude', 'longitude', 'region', 'latitude'],
+            infoTemplate: new InfoTemplate("Земетресение #${objectid}", "${*}")
+        });
 
         var statesUSATask = new QueryTask(statesUSATaskUrl);
 
@@ -135,7 +146,7 @@ require([
 
         function createTemplatePicker() {
             templatePicker = new TemplatePicker({
-                featureLayers: layers,
+                featureLayers: layers.slice(0, -1),
                 rows: "auto",
                 columns: 2,
                 grouping: true,
@@ -168,10 +179,20 @@ require([
             map.infoWindow.hide();
             editToolbar.deactivate();
             resetCursor();
-        };
+            clearAreaSelection();
+        }
+
+        function clearAreaSelection() {
+            earthquakesFL.clearSelection();
+            map.graphics.clear();
+            map.infoWindow.hide();
+            dom.byId('selection-results').innerHTML = null;
+        }
 
         function mapInit(evt) {
-            map.addLayers([mapUSALayer, landusePointLayer, landusePolylineLayer, landusePolygonLayer]);
+            map.addLayers([mapUSALayer, landusePointLayer, landusePolylineLayer, landusePolygonLayer, earthquakesFL]);
+            var nullSymbol = new SimpleMarkerSymbol().setSize(0);
+            earthquakesFL.setRenderer(new SimpleRenderer(nullSymbol));
             createScalebar();
             createBasemapToggle();
             createOverviewMap();
@@ -191,8 +212,11 @@ require([
             createAttrInspector();
             createTemplatePicker();
 
+            createSelectToolbar();
             createDrawToolbar();
             createEditToolbar();
+
+            createFLSelectionSymbol();
 
             createSearchQuery();
             selectQuery = new Query();
@@ -221,6 +245,20 @@ require([
                     }
                 });
             });
+        }
+
+        function createFLSelectionSymbol() {
+            var symbol = new SimpleMarkerSymbol(
+                SimpleMarkerSymbol.STYLE_CIRCLE,
+                12,
+                new SimpleLineSymbol(
+                    SimpleLineSymbol.STYLE_NULL,
+                    new Color([24, 34, 101, 0.9]),
+                    1
+                ),
+                new Color([27, 34, 171, 0.5])
+            );
+            earthquakesFL.setSelectionSymbol(symbol);
         }
 
         function createDialog() {
@@ -335,15 +373,14 @@ require([
 
         function createDrawToolbar() {
             drawToolbar = new Draw(map, { showTooltips: false });
-            drawToolbar.on('draw-end', createGraphic)
+            drawToolbar.on('draw-end', createFLGraphic)
         }
 
-        function createGraphic(evt) {
+        function createFLGraphic(evt) {
             drawToolbar.deactivate();
             var newAttributes = lang.mixin({}, selectedTemplate.template.prototype.attributes);
             var newGraphic = new Graphic(evt.geometry, null, newAttributes);
             selectedTemplate.featureLayer.applyEdits([newGraphic], null, null);
-            map.graphics.add(newGraphic);
         }
 
         function createEditToolbar() {
@@ -351,6 +388,64 @@ require([
             editToolbar.on("deactivate", function(evt) {
                 currentLayer.applyEdits(null, [evt.graphic], null);
             });
+        }
+
+        function createSelectToolbar() {
+            selectToolbar = new Draw(map);
+            selectToolbar.on('draw-end', selectAreaFL);
+            var tools = query('.tool');
+            arrayUtils.forEach(tools, function(tool) {
+                on(tool, 'click', activateSelectTool);
+            });
+        }
+
+        function selectAreaFL(evt) {
+            var symbol = new SimpleFillSymbol(
+                SimpleFillSymbol.STYLE_NULL,
+                    new SimpleLineSymbol(
+                        SimpleLineSymbol.STYLE_SOLID,
+                        new Color([195, 105, 15]),
+                        2
+                    ),
+                new Color([255, 255, 0, 0.25])
+            );
+
+            selectToolbar.deactivate();
+            var graphic = new Graphic(evt.geometry, symbol);
+            map.graphics.add(graphic);
+            bufferArea = graphic.geometry;
+            var selectAreaQuery = new Query();
+            selectAreaQuery.geometry = bufferArea.getExtent();
+            earthquakesFL.queryFeatures(selectAreaQuery, selectInBuffer);
+        }
+
+        function selectInBuffer(response) {
+            var feature;
+            var features = response.features;
+            var inBuffer = [];
+
+            for (var i = 0; i < features.length; i++) {
+                feature = features[i];
+                if (bufferArea.contains(feature.geometry)) {
+                    inBuffer.push(feature.attributes[earthquakesFL.objectIdField]);
+                }
+
+            }
+
+            var newQuery = new Query();
+
+            newQuery.objectIds = inBuffer;
+
+            earthquakesFL.selectFeatures(newQuery, FeatureLayer.SELECTION_NEW, function(results) {
+                dom.byId('selection-results').innerHTML = 'Намерени резултати: ' + results.length;
+            });
+        }
+
+        function activateSelectTool() {
+            clearAreaSelection();
+            var tool = this.value;
+            selectToolbar.activate(Draw[tool]);
+            selectToolbar._tooltip.innerText = 'Очертайте област, в която търсите земетресения';
         }
 
         function resetCursor() {
