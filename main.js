@@ -256,7 +256,7 @@ require([
                     new Color([24, 34, 101, 0.9]),
                     1
                 ),
-                new Color([27, 34, 171, 0.5])
+                new Color([197, 4, 7, 0.7])
             );
             earthquakesFL.setSelectionSymbol(symbol);
         }
