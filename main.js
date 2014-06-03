@@ -3,7 +3,7 @@ var militaryLayerUrl = 'http://sampleserver6.arcgisonline.com/arcgis/rest/servic
 var statesUSATaskUrl = 'http://sampleserver1.arcgisonline.com/ArcGIS/rest/services/Demographics/ESRI_Census_USA/MapServer/5';
 var earthquakesUrl = 'http://sampleserver3.arcgisonline.com/ArcGIS/rest/services/Earthquakes/EarthquakesFromLastSevenDays/FeatureServer/0';
 
-var map;
+var map, mapUSALayer, mapUSAFL;
 
 require([
     'esri/map',
@@ -19,6 +19,7 @@ require([
     'esri/renderers/SimpleRenderer', 'esri/Color', 'esri/InfoTemplate',
 
     "esri/layers/ArcGISDynamicMapServiceLayer", "esri/layers/FeatureLayer", "esri/dijit/AttributeInspector",
+    "dijit/form/HorizontalSlider",
 
     "dojo/parser",
     "dojo/_base/lang", "dojo/dom-construct",
@@ -26,7 +27,7 @@ require([
     'dojo/_base/array', 'dojo/on', 'dojo/query', 'dojo/dom', 'dojo/_base/event', 'dojo/domReady!'
 ],  function(Map, BasemapToggle, Draw, Edit, Graphic, SimpleMarkerSymbol, SimpleFillSymbol, SimpleLineSymbol, Query, QueryTask, TemplatePicker,
              Scalebar, Legend, OverviewMap, SimpleRenderer, Color, InfoTemplate, ArcGISDynamicMapServiceLayer, FeatureLayer, AttributeInspector,
-             parser, lang, domConstruct, Button, Dialog, arrayUtils, on, query, dom, event) {
+             HorizontalSlider, parser, lang, domConstruct, Button, Dialog, arrayUtils, on, query, dom, event) {
 
         esriConfig.defaults.io.proxyUrl = "/proxy";
 
@@ -43,11 +44,11 @@ require([
 
         var bufferArea;
 
-        var legendDijit, layers, currentLayer, dialog;
+        var legendDijit, layers, currentLayer, dialog, roundedValue;
 
         var selectQuery, searchQuery, updateFeature, attrInspector, queryString;
 
-        var mapUSALayer = new ArcGISDynamicMapServiceLayer(dynamicLayerUrl);
+        mapUSALayer = new ArcGISDynamicMapServiceLayer(dynamicLayerUrl);
 
         var landusePointLayer = loadFeatureLayer(militaryLayerUrl + '6');
         var landusePolylineLayer = loadFeatureLayer(militaryLayerUrl + '8');
@@ -59,7 +60,16 @@ require([
             infoTemplate: new InfoTemplate("Земетресение #${objectid}", "${*}")
         });
 
+        mapUSAFL = new FeatureLayer('http://sampleserver6.arcgisonline.com/arcgis/rest/services/USA/MapServer/2', {
+            mode: FeatureLayer.MODE_SNAPSHOT,
+            outFields: ['*']
+        });
+
         var statesUSATask = new QueryTask(statesUSATaskUrl);
+
+        var activationFilter = false;
+        var select = dom.byId('select-state');
+        var currentFilterState;
 
         map.on("load", mapInit);
         map.on('update-end', mapUpdateEnd);
@@ -69,6 +79,11 @@ require([
         mapUSALayer.on('load', createLayerList);
 
         on(dom.byId("form-submit"), "click", searchObject);
+        on(select, 'change', function() { currentFilterState = select.value });
+
+        on(dom.byId("activation"), "click", function() {
+            activationFilter = !activationFilter;
+        });
 
         function createSearchQuery() {
             searchQuery = new Query();
@@ -137,6 +152,21 @@ require([
             overviewMapDijit.startup();
         }
 
+        function createSlider() {
+            return new HorizontalSlider({
+                name: "slider",
+                value: 5,
+                minimum: 0,
+                maximum: 10,
+                intermediateChanges: true,
+                style: "width: 200px;",
+                onChange: function(value) {
+                    roundedValue = Math.round(value * 100) / 100;
+                    dom.byId("slider-value").innerHTML = roundedValue;
+                }
+            }, "slider");
+        }
+
         function createBasemapToggle() {
             return new BasemapToggle({
                 map: map,
@@ -146,7 +176,7 @@ require([
 
         function createTemplatePicker() {
             templatePicker = new TemplatePicker({
-                featureLayers: layers.slice(0, -1),
+                featureLayers: [landusePointLayer, landusePolylineLayer, landusePolygonLayer],
                 rows: "auto",
                 columns: 2,
                 grouping: true,
@@ -190,16 +220,30 @@ require([
         }
 
         function mapInit(evt) {
-            map.addLayers([mapUSALayer, landusePointLayer, landusePolylineLayer, landusePolygonLayer, earthquakesFL]);
+            map.addLayers([mapUSALayer, landusePointLayer, landusePolylineLayer, landusePolygonLayer, earthquakesFL, mapUSAFL]);
             var nullSymbol = new SimpleMarkerSymbol().setSize(0);
             earthquakesFL.setRenderer(new SimpleRenderer(nullSymbol));
             createScalebar();
             createBasemapToggle();
             createOverviewMap();
+            createSlider();
         }
 
         function mapUpdateEnd(evt) {
             legendDijit.refresh();
+        }
+
+        function createStateNames() {
+            var stateQuery = new Query()
+            stateQuery.where = "objectid > 0";
+            statesUSATask.execute(stateQuery, function(res) {
+                for (var i = 0; i < res.features.length; i++) {
+                    if (i == 0) {
+                        currentFilterState = res.features[i].attributes.STATE_NAME;
+                    }
+                    select.innerHTML += '<option>' + res.features[i].attributes.STATE_NAME + '</option>';
+                }
+            });
         }
 
         function mapLayersAdd(evt) {
@@ -219,6 +263,9 @@ require([
             createFLSelectionSymbol();
 
             createSearchQuery();
+            createStateNames();
+
+            mapUSAFL.hide();
             selectQuery = new Query();
 
             arrayUtils.forEach(layers, function(layer) {
@@ -320,10 +367,10 @@ require([
                 }
                 return output;
             });
-            var layer_list = dom.byId("layer-list");
-            layer_list.innerHTML = items.join("\n");
+            var layerList = dom.byId("layer-list");
+            layerList.innerHTML = items.join("\n");
             mapUSALayer.setVisibleLayers(visible);
-            on(layer_list, "click", updateLayerVisibility);
+            on(layerList, "click", updateLayerVisibility);
         }
 
         function createAttrInspector() {
@@ -423,13 +470,26 @@ require([
             var feature;
             var features = response.features;
             var inBuffer = [];
+            var toPush;
 
             for (var i = 0; i < features.length; i++) {
                 feature = features[i];
+                toPush = false;
                 if (bufferArea.contains(feature.geometry)) {
+                    if (activationFilter) {
+                        for (var j = 0; j < mapUSAFL.graphics.length; j++) {
+                            var stateArea = mapUSAFL.graphics[j];
+                            if (stateArea.geometry.contains(feature.geometry) && stateArea.attributes.state_name == currentFilterState && feature.attributes.magnitude >= parseFloat(roundedValue)) {
+                                toPush = true;
+                            }
+                        }
+                    } else {
+                        toPush = true;
+                    }
+                }
+                if (toPush) {
                     inBuffer.push(feature.attributes[earthquakesFL.objectIdField]);
                 }
-
             }
 
             var newQuery = new Query();

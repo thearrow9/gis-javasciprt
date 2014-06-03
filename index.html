@@ -19,11 +19,18 @@
     <div id="basemap-toggle"></div>
     <div id="display" class="panel">
         <div id="layers">
-            <h3>Видими aтрибути</h3>
+            <h3>Видими слоеве</h3>
             <div id="layer-list"></div>
         </div>
+        <div id="layers">
+            <h3>Търсене на земетресения</h3>
+            <div><label for="activation">Активирай филтри</label> <input type="checkbox" id="activation" /></div>
+            <div><select id="select-state"></select></div>
+            <div>с магнитуд над <span id="slider-value">5</span></div>
+            <div id="slider"></div>
+        </div>
         <div id="drawing-tools">
-            <h3>Очертаване на площ</h3>
+            <h3>Търсене в област</h3>
             <button class="tool" value="ELLIPSE">Елипса</button>
             <button class="tool" value="FREEHAND_POLYGON">Полигон</button>
             <div id="selection-results"></div>
