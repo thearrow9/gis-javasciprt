@@ -17,6 +17,7 @@ require([
     'esri/dijit/Scalebar', 'esri/dijit/Legend', 'esri/dijit/OverviewMap',
 
     'esri/renderers/SimpleRenderer', 'esri/Color', 'esri/InfoTemplate',
+    "esri/tasks/IdentifyTask", "esri/tasks/IdentifyParameters",
 
     "esri/layers/ArcGISDynamicMapServiceLayer", "esri/layers/FeatureLayer", "esri/dijit/AttributeInspector",
     "dijit/form/HorizontalSlider",
@@ -26,7 +27,7 @@ require([
     'dijit/form/Button', 'dijit/Dialog',
     'dojo/_base/array', 'dojo/on', 'dojo/query', 'dojo/dom', 'dojo/_base/event', 'dojo/domReady!'
 ],  function(Map, BasemapToggle, Draw, Edit, Graphic, SimpleMarkerSymbol, SimpleFillSymbol, SimpleLineSymbol, Query, QueryTask, TemplatePicker,
-             Scalebar, Legend, OverviewMap, SimpleRenderer, Color, InfoTemplate, ArcGISDynamicMapServiceLayer, FeatureLayer, AttributeInspector,
+             Scalebar, Legend, OverviewMap, SimpleRenderer, Color, InfoTemplate, IdentifyTask, IdentifyParameters, ArcGISDynamicMapServiceLayer, FeatureLayer, AttributeInspector,
              HorizontalSlider, parser, lang, domConstruct, Button, Dialog, arrayUtils, on, query, dom, event) {
 
         esriConfig.defaults.io.proxyUrl = "/proxy";
@@ -47,6 +48,7 @@ require([
         var legendDijit, layers, currentLayer, dialog, roundedValue;
 
         var selectQuery, searchQuery, updateFeature, attrInspector, queryString;
+        var identifyTask, identifyParams;
 
         mapUSALayer = new ArcGISDynamicMapServiceLayer(dynamicLayerUrl);
 
@@ -129,7 +131,7 @@ require([
         }
 
         function capitalizeWord(word) {
-            return word.charAt(0).toUpperCase() + word.toLowerCase().substr(1)
+            return word.charAt(0).toUpperCase() + word.toLowerCase().substr(1);
         }
 
         function createScalebar() {
@@ -205,11 +207,32 @@ require([
             }
         }
 
-        function mapClick() {
+        function mapClick(evt) {
             map.infoWindow.hide();
             editToolbar.deactivate();
             resetCursor();
             clearAreaSelection();
+            executeIdentifyTask(evt);
+        }
+
+        function executeIdentifyTask(evt) {
+            identifyParams.geometry = evt.mapPoint;
+            identifyParams.mapExtent = map.extent;
+
+            var deferred = identifyTask.execute(identifyParams)
+            .addCallback(function (response) {
+                return arrayUtils.map(response, function (result) {
+                    var feature = result.feature;
+                    var layerName = result.layerName;
+
+                    feature.attributes.layerName = layerName;
+                    feature.setInfoTemplate(new InfoTemplate());
+                    return feature;
+                });
+            });
+
+            map.infoWindow.setFeatures([deferred]);
+            map.infoWindow.show(evt.mapPoint);
         }
 
         function clearAreaSelection() {
@@ -227,21 +250,38 @@ require([
             createBasemapToggle();
             createOverviewMap();
             createSlider();
+            createIdentifyTask();
+            identifyTask = new IdentifyTask(dynamicLayerUrl);
         }
 
         function mapUpdateEnd(evt) {
             legendDijit.refresh();
         }
 
+        function createIdentifyTask() {
+            identifyParams = new IdentifyParameters();
+            identifyParams.tolerance = 3;
+            identifyParams.returnGeometry = true;
+            identifyParams.layerIds = [3];
+            identifyParams.layerOption = IdentifyParameters.LAYER_OPTION_ALL;
+            identifyParams.width = map.width;
+            identifyParams.height = map.height;
+        }
+
         function createStateNames() {
-            var stateQuery = new Query()
+            var stateQuery = new Query();
             stateQuery.where = "objectid > 0";
             statesUSATask.execute(stateQuery, function(res) {
+                var states = [];
                 for (var i = 0; i < res.features.length; i++) {
+                    states.push(res.features[i].attributes.STATE_NAME);
+                }
+                states.sort();
+                for (var i = 0; i < states.length; i++) {
                     if (i == 0) {
-                        currentFilterState = res.features[i].attributes.STATE_NAME;
+                        currentFilterState = states[i];
                     }
-                    select.innerHTML += '<option>' + res.features[i].attributes.STATE_NAME + '</option>';
+                    select.innerHTML += '<option>' + states[i] + '</option>';
                 }
             });
         }
@@ -416,6 +456,7 @@ require([
                 visible.push(-1);
             }
             mapUSALayer.setVisibleLayers(visible);
+            identifyParams.layerIds = visible;
         }
 
         function createDrawToolbar() {
