@@ -216,6 +216,9 @@ require([
         }
 
         function executeIdentifyTask(evt) {
+            if (identifyParams.layerIds.length == 0) {
+                return false;
+            }
             identifyParams.geometry = evt.mapPoint;
             identifyParams.mapExtent = map.extent;
 
@@ -445,10 +448,12 @@ require([
         function updateLayerVisibility() {
             var inputs = query(".list_item");
             var input, visible = [];
+            identifyParams.layerIds = [];
 
             arrayUtils.forEach(inputs, function(input) {
                 if (input.checked) {
                     visible.push(input.id);
+                    identifyParams.layerIds.push(input.id);
                 }
             });
 
@@ -456,7 +461,6 @@ require([
                 visible.push(-1);
             }
             mapUSALayer.setVisibleLayers(visible);
-            identifyParams.layerIds = visible;
         }
 
         function createDrawToolbar() {
